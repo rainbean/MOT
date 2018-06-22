@@ -16,6 +16,38 @@ from helper import config
 import warnings
 warnings.filterwarnings("ignore")
 
+# Refer to https://arxiv.org/pdf/1603.00831.pdf
+Label = [
+    'Background',
+    'Pedestrian',              # 1
+    'Person on vehicle',
+    'Car',                     # 3
+    'Bicycle',
+    'Motorbike',
+    'Non motorized vehicle',
+    'Static person',           # 7
+    'Distractor',
+    'Occluder',
+    'Occluder on the ground',
+    'Occluder full',           # 11
+    'Reflection'
+    ]
+
+# Ground Truth file format, 1-based
+'''
+1 Frame number Indicate at which frame the object is present
+2 Identity number Each pedestrian trajectory is identified by a unique ID (−1 for detections)
+3 Bounding box left Coordinate of the top-left corner of the pedestrian bounding box
+4 Bounding box top Coordinate of the top-left corner of the pedestrian bounding box
+5 Bounding box width Width in pixels of the pedestrian bounding box
+6 Bounding box height Height in pixels of the pedestrian bounding box
+7 Confidence score DET: Indicates how confident the detector is that this instance is a pedestrian.
+  GT: It acts as a flag whether the entry is to be considered (1) or ignored (0).
+8 Class GT: Indicates the type of object annotated
+9 Visibility GT: Visibility ratio, a number between 0 and 1 that says how much of that object is visible. 
+  Can be due to occlusion and due to image border cropping.
+'''
+
 class MoTDataset(Dataset):
     def __init__(self, root, transform=None):
         """
@@ -30,7 +62,7 @@ class MoTDataset(Dataset):
     def parse(self, root):
         ''' iterate seqinfo.ini of each subfoler, then validate existing of real files '''
         seq = {}
-        seqinfo = configparser.ConfigParser()        
+        seqinfo = configparser.ConfigParser()
         for v in os.listdir(root):
             seqinfo.read(os.path.join(root, v, 'seqinfo.ini'))
             vlen = seqinfo['Sequence'].getint('seqlength', 0)
@@ -63,10 +95,24 @@ class MoTDataset(Dataset):
             raise IndexError()
         if img.mode != 'RGB':
             img = image.convert('RGB')
-        # get labels
-        sample = {'image': img }
-        # .... 
-        
+        # get ground truth
+        labels = []
+        fp = os.path.join(self.root, v, 'gt', 'gt.txt')
+        if os.path.exists(fp):
+            df = pd.read_csv(fp, header=None)
+            df = df.loc[ df[0] == idx+1 ] # column 0 is Frame number
+            for r in df.itertuples():
+                l = {
+                    'id': r._2,
+                    'rect': [r._3, r._4, r._5, r._6],
+                    'show': r._7,
+                    'class': r._8,
+                    'ratio': r._9,
+                    }
+                labels.append(l)
+        # pack as sample
+        sample = {'image': img, 'label': labels}
+
         if self.transform:
             sample = self.transform(sample)
 
@@ -78,3 +124,4 @@ if __name__ == '__main__':
     sample = train[idx]
     # display original image
     sample['image'].show()
+    #print(sample['label'])
